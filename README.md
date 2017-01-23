@@ -1,6 +1,6 @@
 # Izitoast
 
-Simple wrapper around [IZITOAST](http://izitoast.marcelodolce.com) js notification plugin [visit Authors website.](https://www.google.com "Marcelo Dolce")
+Simple wrapper around [IZITOAST](https://github.com/dolce/iziToast) js notification plugin [visit Authors website.](http://izitoast.marcelodolce.com)
 
 
 ## Installation
@@ -41,11 +41,11 @@ iziToast.success({
 
 You will see notification in the bottom-right corner of your browser.
 
-To find more about usage options, please [visit Authors website.](https://www.google.com "Marcelo Dolce")
+To find more about usage options, please [visit Authors website.](http://izitoast.marcelodolce.com)
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/BadAllOff/izitoast. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [Contributor Covenant](http://contributor-covenant.org) code of conduct.
+Bug reports and pull requests are welcome on GitHub at https://github.com/BadAllOff/iziToast-rails. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [Contributor Covenant](http://contributor-covenant.org) code of conduct.
 
 
 ## License
