@@ -1,5 +1,5 @@
 /*
-* iziToast | v1.1.1
+* iziToast | v1.1.2
 * http://izitoast.marcelodolce.com
 * by Marcelo Dolce.
 */
@@ -49,11 +49,16 @@
 
 	// Default settings
 	var defaults = {
+		id: '',
 		class: '',
 		title: '',
 		titleColor: '',
+		titleSize: '',
+		titleLineHeight: '',
 		message: '',
 		messageColor: '',
+		messageSize: '',
+		messageLineHeight: '',
 		backgroundColor: '',
 		color: '', // blue, red, green, yellow
 		icon: '',
@@ -61,7 +66,8 @@
 		iconColor: '',
 		image: '',
 		imageWidth: 50,
-		zindex: 99999,
+		maxWidth: null,
+		zindex: null,
 		layout: 1,
 		balloon: false,
 		close: true,
@@ -100,6 +106,23 @@
 	        }
 	    };
 	}
+
+	/*
+     * Polyfill for CustomEvent for IE >= 9
+     * https://developer.mozilla.org/en-US/docs/Web/API/CustomEvent/CustomEvent#Polyfill
+     */
+    if (typeof window.CustomEvent !== "function") {
+        var CustomEventPolyfill = function (event, params) {
+            params = params || { bubbles: false, cancelable: false, detail: undefined };
+            var evt = document.createEvent('CustomEvent');
+            evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
+            return evt;
+        };
+
+        CustomEventPolyfill.prototype = window.Event.prototype;
+
+        window.CustomEvent = CustomEventPolyfill;
+    }
 
 	/**
 	 * A simple forEach() implementation for Arrays, Objects and NodeLists
@@ -176,14 +199,14 @@
 	 * @private
 	 */
 	var drag = function() {
-	    
+
 	    return {
 	        move: function(toast, instance, settings, xpos) {
 
 	        	var opacity,
 	        		opacityRange = 0.3,
 	        		distance = 180;
-	            
+
 	            toast.style.transform = 'translateX('+xpos + 'px)';
 
 	            if(xpos > 0){
@@ -198,7 +221,7 @@
 					}
 	            }
 				toast.style.opacity = opacity;
-		
+
 				if(opacity < opacityRange){
 
 					if(ISCHROME || ISFIREFOX)
@@ -208,7 +231,7 @@
 
 	                this.stopMoving(toast, null);
 				}
-				
+
 	        },
 	        startMoving: function(toast, instance, settings, e) {
 
@@ -266,36 +289,41 @@
 	 */
 	var moveProgress = function(toast, settings, callback){
 
-		var isPaused = false;
-		var isReseted = false;
-		var isClosed = false;
+		var $elem = toast.querySelector("."+PLUGIN_NAME+"-progressbar div");
+
 		var timerTimeout = null;
-		var elem = toast.querySelector("."+PLUGIN_NAME+"-progressbar div");
+
+		var is = {
+			Paused: false,
+			Reseted: false,
+			Closed: false
+		};
+
 		var progressBar = {
 			hideEta: null,
 			maxHideTime: null,
 			currentTime: new Date().getTime(),
 			updateProgress: function()
 			{
-				isPaused = toast.classList.contains(PLUGIN_NAME+'-paused') ? true : false;
-				isReseted = toast.classList.contains(PLUGIN_NAME+'-reseted') ? true : false;
-				isClosed = toast.classList.contains(PLUGIN_NAME+'-closed') ? true : false;
+				is.Paused = toast.classList.contains(PLUGIN_NAME+'-paused') ? true : false;
+				is.Reseted = toast.classList.contains(PLUGIN_NAME+'-reseted') ? true : false;
+				is.Closed = toast.classList.contains(PLUGIN_NAME+'-closed') ? true : false;
 
-				if(isReseted){
+				if(is.Reseted){
 					clearTimeout(timerTimeout);
-					elem.style.width = '100%';
+					$elem.style.width = '100%';
 					moveProgress(toast, settings, callback);
 					toast.classList.remove(PLUGIN_NAME+'-reseted');
 				}
-				if(isClosed){
+				if(is.Closed){
 					clearTimeout(timerTimeout);
 					toast.classList.remove(PLUGIN_NAME+'-closed');
 				}
 
-				if(!isPaused && !isReseted && !isClosed){
+				if(!is.Paused && !is.Reseted && !is.Closed){
 					progressBar.currentTime = progressBar.currentTime+10;
 					var percentage = ((progressBar.hideEta - (progressBar.currentTime)) / progressBar.maxHideTime) * 100;
-					elem.style.width = percentage + '%';
+					$elem.style.width = percentage + '%';
 
 					if(Math.round(percentage) < 0 || typeof toast != 'object'){
 						clearTimeout(timerTimeout);
@@ -305,6 +333,7 @@
 
 			}
 		};
+
 		if (settings.timeout > 0) {
 			progressBar.maxHideTime = parseFloat(settings.timeout);
 			progressBar.hideEta = new Date().getTime() + progressBar.maxHideTime;
@@ -397,7 +426,7 @@
 		var H = $toast.parentNode.offsetHeight;
 				$toast.parentNode.style.height = H+'px';
 				$toast.style.pointerEvents = 'none';
-		
+
 		if(!ISMOBILE || window.innerWidth > MOBILEWIDTH){
 			$toast.parentNode.style.transitionDelay = '0.2s';
 		}
@@ -410,19 +439,12 @@
 			},1000);
 		},200);
 
-		if (settings.class){
-			try {
-				var event;
-				if (window.CustomEvent) {
-					event = new CustomEvent(PLUGIN_NAME+'-close', {detail: {class: settings.class}});
-				} else {
-					event = document.createEvent('CustomEvent');
-					event.initCustomEvent(PLUGIN_NAME+'-close', true, true, {class: settings.class});
-				}
-				document.dispatchEvent(event);
-			} catch(ex){
-				console.warn(ex);
-			}
+		try {
+			settings.closedBy = closedBy;
+			var event = new CustomEvent(PLUGIN_NAME+'-close', {detail: settings, bubles: true, cancelable: true});
+			document.dispatchEvent(event);
+		} catch(ex){
+			console.warn(ex);
 		}
 
 		if(typeof settings.onClose !== "undefined"){
@@ -443,318 +465,380 @@
 		var settings = extend(CONFIG, options || {});
 			settings = extend(defaults, settings);
 
-		var $toastCapsule = document.createElement("div");
-			$toastCapsule.classList.add(PLUGIN_NAME+"-capsule");
+		var $DOM = {
+			toast: document.createElement("div"),
+			toastBody: document.createElement("div"),
+			toastCapsule: document.createElement("div"),
+			icon: document.createElement("i"),
+			cover: document.createElement("div"),
+			strong: document.createElement("strong"),
+			p: document.createElement("p"),
+			progressBar: document.createElement("div"),
+			progressBarDiv: document.createElement("div"),
+			buttonClose: document.createElement("button"),
+			buttons: document.createElement("div"),
+			wrapper: null
+		};
 
-		var $toast = document.createElement("div");
-			$toast.classList.add(PLUGIN_NAME);
+		$DOM.toastBody.appendChild($DOM.strong);
+		$DOM.toastBody.appendChild($DOM.p);
+		$DOM.toast.appendChild($DOM.toastBody);
+		$DOM.toastCapsule.appendChild($DOM.toast);
 
-		if(ISMOBILE || window.innerWidth <= MOBILEWIDTH){
-			if(settings.transitionInMobile.length>0)
-				$toast.classList.add(settings.transitionInMobile);
-		} else {
-			if(settings.transitionIn.length>0)
-				$toast.classList.add(settings.transitionIn);
-		}
+		// CSS Settings
+		(function(){
 
-		if(settings.rtl){
-			$toast.classList.add(PLUGIN_NAME + '-rtl');
-		}
-
-		if (settings.color.length > 0) { //#, rgb, rgba, hsl
-			
-			if( isColor(settings.color) ){
-				$toast.style.background = settings.color;
-			} else {
-				$toast.classList.add(PLUGIN_NAME+'-color-'+settings.color);
-			}
-		}
-		if (settings.backgroundColor.length > 0) {
-			$toast.style.background = settings.backgroundColor;
-		}
-
-		if (settings.class){
-			$toast.classList.add(settings.class);
-		}
-
-		if (settings.image) {
-			var $cover = document.createElement("div");
-			$cover.classList.add(PLUGIN_NAME + '-cover');
-			$cover.style.width = settings.imageWidth + "px";
-			$cover.style.backgroundImage = 'url(' + settings.image + ')';
-			$toast.appendChild($cover);
-		}
-
-		var $buttonClose;
-		if(settings.close){
-			$buttonClose = document.createElement("button");
-			$buttonClose.classList.add(PLUGIN_NAME + '-close');
-			$toast.appendChild($buttonClose);
-		} else {
-			if(settings.rtl){
-				$toast.style.paddingLeft = "30px";
-			} else {
-				$toast.style.paddingRight = "30px";
-			}
-		}
-
-		if (settings.progressBar) {
-
-			var $progressBar = document.createElement("div");
-				$progressBar.classList.add(PLUGIN_NAME + '-progressbar');
-
-			var $progressBarDiv = document.createElement("div");
-				$progressBarDiv.style.background = settings.progressBarColor;
-
-			$progressBar.appendChild($progressBarDiv);
-			$toast.appendChild($progressBar);
-			
-			setTimeout(function() {
-				moveProgress($toast, settings, function(){
-					that.hide(settings, $toast);
-				});
-			},300);
-		}
-		else if( settings.progressBar === false && settings.timeout > 0){
-			setTimeout(function() {
-				that.hide(settings, $toast);
-			}, settings.timeout);
-		}
-
-		var $toastBody = document.createElement("div");
-			$toastBody.classList.add(PLUGIN_NAME + '-body');
-
-		if (settings.image) {
-			if(settings.rtl){
-				$toastBody.style.marginRight = (settings.imageWidth + 10) + 'px';
-			} else {
-				$toastBody.style.marginLeft = (settings.imageWidth + 10) + 'px';				
-			}
-		}
-
-		if (settings.icon) {
-			var $icon = document.createElement("i");
-				$icon.setAttribute("class", PLUGIN_NAME + '-icon ' + settings.icon);
-			
-			if (settings.iconText){
-				$icon.appendChild(document.createTextNode(settings.iconText));
-			}
-
-			if(settings.rtl){
-				$toastBody.style.paddingRight = '33px';
-			} else {
-				$toastBody.style.paddingLeft = '33px';				
-			}
-			
-			if (settings.iconColor){
-				$icon.style.color = settings.iconColor;
-			}
-			$toastBody.appendChild($icon);
-		}
-
-		var $strong = document.createElement("strong");
-		if (settings.titleColor.length > 0) {
-			$strong.style.color = settings.titleColor;
-		}
-		$strong.appendChild(createFragElem(settings.title));
-
-		var $p = document.createElement("p");
-		if (settings.messageColor.length > 0) {
-			$p.style.color = settings.messageColor;
-		}
-		$p.appendChild(createFragElem(settings.message));
-
-		if(settings.layout > 1){
-			$toast.classList.add(PLUGIN_NAME+"-layout"+settings.layout);
-		}
-
-		if(settings.balloon){
-			$toast.classList.add(PLUGIN_NAME+"-balloon");
-		}
-
-		$toastBody.appendChild($strong);
-		$toastBody.appendChild($p);
-
-		var $buttons;
-		if (settings.buttons.length > 0) {
-
-			$buttons = document.createElement("div");
-			$buttons.classList.add(PLUGIN_NAME + '-buttons');
-
-			$p.style.marginRight = '15px';
-
-			var i = 0;
-			forEach(settings.buttons, function (value, index) {
-				$buttons.appendChild(createFragElem(value[0]));
-
-				var $btns = $buttons.childNodes;
-
-				$btns[i].addEventListener('click', function (e) {
-					e.preventDefault();
-					var ts = value[1];
-					return new ts(that, $toast); 
-				});
-
-				i++;
-			});
-			$toastBody.appendChild($buttons);
-		}
-
-		$toast.appendChild($toastBody);
-		$toastCapsule.style.visibility = 'hidden';
-		$toastCapsule.appendChild($toast);
-
-		setTimeout(function() {
-			var H = $toast.offsetHeight;
-			var style = $toast.currentStyle || window.getComputedStyle($toast);
-			var marginTop = style.marginTop;
-				marginTop = marginTop.split("px");
-				marginTop = parseInt(marginTop[0]);
-			var marginBottom = style.marginBottom;
-				marginBottom = marginBottom.split("px");
-				marginBottom = parseInt(marginBottom[0]);
-
-			$toastCapsule.style.visibility = '';
-			$toastCapsule.style.height = (H+marginBottom+marginTop)+'px';
-			setTimeout(function() {
-				$toastCapsule.style.height = 'auto';
-				if(settings.target){
-					$toastCapsule.style.overflow = 'visible';
-				}
-			},1000);
-		}, 100);
-
-		var position = settings.position,
-			$wrapper;
-
-		if(settings.target){
-
-			$wrapper = document.querySelector(settings.target);
-			$wrapper.classList.add(PLUGIN_NAME + '-target');
-
-			if (settings.targetFirst) {
-				$wrapper.insertBefore($toastCapsule, $wrapper.firstChild);
-			} else {
-				$wrapper.appendChild($toastCapsule);
-			}
-
-		} else {
-
-			if( POSITIONS.indexOf(settings.position) == -1 ){
-				console.warn("["+PLUGIN_NAME+"] Incorrect position.\nIt can be › " + POSITIONS);
-				return;
-			}
+			$DOM.toast.classList.add(PLUGIN_NAME);
+			$DOM.toastCapsule.classList.add(PLUGIN_NAME+"-capsule");
+			$DOM.toastBody.classList.add(PLUGIN_NAME + '-body');
 
 			if(ISMOBILE || window.innerWidth <= MOBILEWIDTH){
-				if(settings.position == "bottomLeft" || settings.position == "bottomRight" || settings.position == "bottomCenter"){
-					position = PLUGIN_NAME+'-wrapper-bottomCenter';
-				}
-				else if(settings.position == "topLeft" || settings.position == "topRight" || settings.position == "topCenter"){
-					position = PLUGIN_NAME+'-wrapper-topCenter';
-				}
-				else{
-					position = PLUGIN_NAME+'-wrapper-center';
-				}
+				if(settings.transitionInMobile)
+					$DOM.toast.classList.add(settings.transitionInMobile);
 			} else {
-				position = PLUGIN_NAME+'-wrapper-'+position;
+				if(settings.transitionIn)
+					$DOM.toast.classList.add(settings.transitionIn);
 			}
-			$wrapper = document.querySelector('.' + PLUGIN_NAME + '-wrapper.'+position);
 
-			if (!$wrapper) {
-				$wrapper = document.createElement("div");
-				$wrapper.classList.add(PLUGIN_NAME + '-wrapper');
-				$wrapper.classList.add(position);
-				document.body.appendChild($wrapper);
+			if(settings.class){
+				var classes = settings.class.split(" ");
+				forEach(classes, function (value, index) {
+					$DOM.toast.classList.add(value);
+				});
 			}
-			if(settings.position == "topLeft" || settings.position == "topCenter" || settings.position == "topRight"){
-				$wrapper.insertBefore($toastCapsule, $wrapper.firstChild);
+
+			if(settings.id){ $DOM.toast.id = settings.id; }
+
+			if(settings.rtl){ $DOM.toast.classList.add(PLUGIN_NAME + '-rtl'); }
+
+			if(settings.layout > 1){ $DOM.toast.classList.add(PLUGIN_NAME+"-layout"+settings.layout); }
+
+			if(settings.balloon){ $DOM.toast.classList.add(PLUGIN_NAME+"-balloon"); }
+
+			if(settings.maxWidth){
+				if( !isNaN(settings.maxWidth) ){
+					$DOM.toast.style.maxWidth = settings.maxWidth+'px';
+				} else {
+					$DOM.toast.style.maxWidth = settings.maxWidth;
+				}
+			}
+
+			if (settings.color) { //#, rgb, rgba, hsl
+
+				if( isColor(settings.color) ){
+					$DOM.toast.style.background = settings.color;
+				} else {
+					$DOM.toast.classList.add(PLUGIN_NAME+'-color-'+settings.color);
+				}
+			}
+
+			if (settings.backgroundColor) {
+				$DOM.toast.style.background = settings.backgroundColor;
+				if(settings.balloon){
+					$DOM.toast.style.borderColor = settings.backgroundColor;
+				}
+			}
+		})();
+
+		// Cover image
+		(function(){
+			if (settings.image) {
+				$DOM.cover.classList.add(PLUGIN_NAME + '-cover');
+				$DOM.cover.style.width = settings.imageWidth + "px";
+				$DOM.cover.style.backgroundImage = 'url(' + settings.image + ')';
+
+				if(settings.rtl){
+					$DOM.toastBody.style.marginRight = (settings.imageWidth + 10) + 'px';
+				} else {
+					$DOM.toastBody.style.marginLeft = (settings.imageWidth + 10) + 'px';
+				}
+				$DOM.toast.appendChild($DOM.cover);
+			}
+		})();
+
+		// Button close
+		(function(){
+			if(settings.close){
+				$DOM.buttonClose.classList.add(PLUGIN_NAME + '-close');
+				$DOM.buttonClose.addEventListener('click', function (e) {
+					var button = e.target;
+					that.hide(settings, $DOM.toast, 'button');
+				});
+				$DOM.toast.appendChild($DOM.buttonClose);
 			} else {
-				$wrapper.appendChild($toastCapsule);
+				if(settings.rtl){
+					$DOM.toast.style.paddingLeft = "30px";
+				} else {
+					$DOM.toast.style.paddingRight = "30px";
+				}
 			}
-		}
+		})();
 
-		if (!isNaN(settings.zindex)) {
-			$wrapper.style.zIndex = settings.zindex;
-		} else {
-			console.warn("["+PLUGIN_NAME+"] Invalid zIndex.");
-		}
+		// Progress Bar
+		(function(){
+			if (settings.progressBar) {
+				$DOM.progressBar.classList.add(PLUGIN_NAME + '-progressbar');
+				$DOM.progressBarDiv.style.background = settings.progressBarColor;
+				$DOM.progressBar.appendChild($DOM.progressBarDiv);
+				$DOM.toast.appendChild($DOM.progressBar);
 
-		settings.onOpen.apply(null, [settings, $toast]);
+				setTimeout(function() {
+					moveProgress($DOM.toast, settings, function(){
+						that.hide(settings, $DOM.toast);
+					});
+				},300);
+			}
+			else if( settings.progressBar === false && settings.timeout > 0){
+				setTimeout(function() {
+					that.hide(settings, $DOM.toast);
+				}, settings.timeout);
+			}
+		})();
+
+		// Icon
+		(function(){
+			if (settings.icon) {
+				$DOM.icon.setAttribute("class", PLUGIN_NAME + '-icon ' + settings.icon);
+
+				if (settings.iconText){
+					$DOM.icon.appendChild(document.createTextNode(settings.iconText));
+				}
+
+				if(settings.rtl){
+					$DOM.toastBody.style.paddingRight = '33px';
+				} else {
+					$DOM.toastBody.style.paddingLeft = '33px';
+				}
+
+				if (settings.iconColor){
+					$DOM.icon.style.color = settings.iconColor;
+				}
+				$DOM.toastBody.appendChild($DOM.icon);
+			}
+		})();
+
+		// Title
+		(function(){
+			if (settings.titleColor) {
+				$DOM.strong.style.color = settings.titleColor;
+			}
+			if (settings.titleSize) {
+				if( !isNaN(settings.titleSize) ){
+					$DOM.strong.style.fontSize = settings.titleSize+'px';
+				} else {
+					$DOM.strong.style.fontSize = settings.titleSize;
+				}
+			}
+			if (settings.titleLineHeight) {
+				if( !isNaN(settings.titleSize) ){
+					$DOM.strong.style.lineHeight = settings.titleLineHeight+'px';
+				} else {
+					$DOM.strong.style.lineHeight = settings.titleLineHeight;
+				}
+			}
+			$DOM.strong.appendChild(createFragElem(settings.title));
+		})();
+
+		// Message
+		(function(){
+			if (settings.messageColor) {
+				$DOM.p.style.color = settings.messageColor;
+			}
+			if (settings.messageSize) {
+				if( !isNaN(settings.titleSize) ){
+					$DOM.p.style.fontSize = settings.messageSize+'px';
+				} else {
+					$DOM.p.style.fontSize = settings.messageSize;
+				}
+			}
+			if (settings.messageLineHeight) {
+
+				if( !isNaN(settings.titleSize) ){
+					$DOM.p.style.lineHeight = settings.messageLineHeight+'px';
+				} else {
+					$DOM.p.style.lineHeight = settings.messageLineHeight;
+				}
+			}
+			$DOM.p.appendChild(createFragElem(settings.message));
+		})();
+
+		// Buttons
+		(function(){
+			if (settings.buttons.length > 0) {
+
+				$DOM.buttons.classList.add(PLUGIN_NAME + '-buttons');
+
+				if(settings.rtl){
+					$DOM.p.style.marginLeft = '15px';
+				} else {
+					$DOM.p.style.marginRight = '15px';
+				}
+
+				var i = 0;
+				forEach(settings.buttons, function (value, index) {
+					$DOM.buttons.appendChild(createFragElem(value[0]));
+
+					var $btns = $DOM.buttons.childNodes;
+
+					$btns[i].addEventListener('click', function (e) {
+						e.preventDefault();
+						var ts = value[1];
+						return new ts(that, $DOM.toast);
+					});
+
+					i++;
+				});
+				$DOM.toastBody.appendChild($DOM.buttons);
+			}
+		})();
+
+		// Target
+		(function(){
+			$DOM.toastCapsule.style.visibility = 'hidden';
+			setTimeout(function() {
+				var H = $DOM.toast.offsetHeight;
+				var style = $DOM.toast.currentStyle || window.getComputedStyle($DOM.toast);
+				var marginTop = style.marginTop;
+					marginTop = marginTop.split("px");
+					marginTop = parseInt(marginTop[0]);
+				var marginBottom = style.marginBottom;
+					marginBottom = marginBottom.split("px");
+					marginBottom = parseInt(marginBottom[0]);
+
+				$DOM.toastCapsule.style.visibility = '';
+				$DOM.toastCapsule.style.height = (H+marginBottom+marginTop)+'px';
+				setTimeout(function() {
+					$DOM.toastCapsule.style.height = 'auto';
+					if(settings.target){
+						$DOM.toastCapsule.style.overflow = 'visible';
+					}
+				},1000);
+			}, 100);
+		})();
+
+		// Target
+		(function(){
+			var position = settings.position;
+
+			if(settings.target){
+
+				$DOM.wrapper = document.querySelector(settings.target);
+				$DOM.wrapper.classList.add(PLUGIN_NAME + '-target');
+
+				if (settings.targetFirst) {
+					$DOM.wrapper.insertBefore($DOM.toastCapsule, $DOM.wrapper.firstChild);
+				} else {
+					$DOM.wrapper.appendChild($DOM.toastCapsule);
+				}
+
+			} else {
+
+				if( POSITIONS.indexOf(settings.position) == -1 ){
+					console.warn("["+PLUGIN_NAME+"] Incorrect position.\nIt can be › " + POSITIONS);
+					return;
+				}
+
+				if(ISMOBILE || window.innerWidth <= MOBILEWIDTH){
+					if(settings.position == "bottomLeft" || settings.position == "bottomRight" || settings.position == "bottomCenter"){
+						position = PLUGIN_NAME+'-wrapper-bottomCenter';
+					}
+					else if(settings.position == "topLeft" || settings.position == "topRight" || settings.position == "topCenter"){
+						position = PLUGIN_NAME+'-wrapper-topCenter';
+					}
+					else{
+						position = PLUGIN_NAME+'-wrapper-center';
+					}
+				} else {
+					position = PLUGIN_NAME+'-wrapper-'+position;
+				}
+				$DOM.wrapper = document.querySelector('.' + PLUGIN_NAME + '-wrapper.'+position);
+
+				if (!$DOM.wrapper) {
+					$DOM.wrapper = document.createElement("div");
+					$DOM.wrapper.classList.add(PLUGIN_NAME + '-wrapper');
+					$DOM.wrapper.classList.add(position);
+					document.body.appendChild($DOM.wrapper);
+				}
+				if(settings.position == "topLeft" || settings.position == "topCenter" || settings.position == "topRight"){
+					$DOM.wrapper.insertBefore($DOM.toastCapsule, $DOM.wrapper.firstChild);
+				} else {
+					$DOM.wrapper.appendChild($DOM.toastCapsule);
+				}
+			}
+
+			if (!isNaN(settings.zindex)) {
+				$DOM.wrapper.style.zIndex = settings.zindex;
+			} else {
+				console.warn("["+PLUGIN_NAME+"] Invalid zIndex.");
+			}
+		})();
+
+		// Inside animations
+		(function(){
+			if(settings.animateInside){
+				$DOM.toast.classList.add(PLUGIN_NAME+'-animateInside');
+
+				var timeAnimation1 = 200,
+					timeAnimation2 = 100,
+					timeAnimation3 = 300;
+				if(settings.transitionIn == "bounceInLeft"){
+					timeAnimation1 = 400;
+					timeAnimation2 = 200;
+					timeAnimation3 = 400;
+				}
+
+				window.setTimeout(function(){
+					$DOM.strong.classList.add('slideIn');
+				},timeAnimation1);
+
+				window.setTimeout(function(){
+					$DOM.p.classList.add('slideIn');
+				},timeAnimation2);
+
+				if (settings.icon) {
+					window.setTimeout(function(){
+						$DOM.icon.classList.add('revealIn');
+					},timeAnimation3);
+				}
+
+				if (settings.buttons.length > 0 && $DOM.buttons) {
+					var counter = 150;
+					forEach($DOM.buttons.childNodes, function(element, index) {
+
+						window.setTimeout(function(){
+							element.classList.add('revealIn');
+						},counter);
+						counter = counter + counter;
+					});
+				}
+			}
+		})();
+
+		settings.onOpen.apply(null, [settings, $DOM.toast]);
 
 		try {
-			var event;
-			if (window.CustomEvent) {
-				event = new CustomEvent(PLUGIN_NAME+'-open', {detail: {class: settings.class}});
-			} else {
-				event = document.createEvent('CustomEvent');
-				event.initCustomEvent(PLUGIN_NAME+'-open', true, true, {class: settings.class});
-			}
+			var event = new CustomEvent(PLUGIN_NAME + '-open', {detail: settings, bubles: true, cancelable: true});
 			document.dispatchEvent(event);
 		} catch(ex){
 			console.warn(ex);
 		}
 
-		if(settings.animateInside){
-			$toast.classList.add(PLUGIN_NAME+'-animateInside');
-		
-			var timeAnimation1 = 200;
-			var timeAnimation2 = 100;
-			var timeAnimation3 = 300;
-			if(settings.transitionIn == "bounceInLeft"){
-				timeAnimation1 = 400;
-				timeAnimation2 = 200;
-				timeAnimation3 = 400;
-			}
-
-			window.setTimeout(function(){
-				$strong.classList.add('slideIn');
-			},timeAnimation1);
-
-			window.setTimeout(function(){
-				$p.classList.add('slideIn');
-			},timeAnimation2);
-
-			if (settings.icon) {
-				window.setTimeout(function(){
-					$icon.classList.add('revealIn');
-				},timeAnimation3);
-			}
-
-			if (settings.buttons.length > 0 && $buttons) {
-				var counter = 150;
-				forEach($buttons.childNodes, function(element, index) {
-
-					window.setTimeout(function(){
-						element.classList.add('revealIn');
-					},counter);
-					counter = counter + counter;
-				});
-			}
-		}
-		
-		if($buttonClose){
-			$buttonClose.addEventListener('click', function (e) {
-				var button = e.target;
-				that.hide(settings, $toast, 'button');
-			});
-		}
-
 		if(settings.pauseOnHover){
-			
-			$toast.addEventListener('mouseenter', function (e) {
+
+			$DOM.toast.addEventListener('mouseenter', function (e) {
 				this.classList.add(PLUGIN_NAME+'-paused');
 			});
-			$toast.addEventListener('mouseleave', function (e) {
+			$DOM.toast.addEventListener('mouseleave', function (e) {
 				this.classList.remove(PLUGIN_NAME+'-paused');
 			});
 		}
 
 		if(settings.resetOnHover){
 
-			$toast.addEventListener('mouseenter', function (e) {
+			$DOM.toast.addEventListener('mouseenter', function (e) {
 				this.classList.add(PLUGIN_NAME+'-reseted');
 			});
-			$toast.addEventListener('mouseleave', function (e) {
+			$DOM.toast.addEventListener('mouseleave', function (e) {
 				this.classList.remove(PLUGIN_NAME+'-reseted');
 			});
 		}
@@ -763,27 +847,26 @@
 
 			if (ACCEPTSTOUCH) {
 
-			    $toast.addEventListener('touchstart', function(e) {
+			    $DOM.toast.addEventListener('touchstart', function(e) {
 			        drag.startMoving(this, that, settings, e);
 			    }, false);
 
-			    $toast.addEventListener('touchend', function(e) {
+			    $DOM.toast.addEventListener('touchend', function(e) {
 			        drag.stopMoving(this, e);
 			    }, false);
 			} else {
 
-			    $toast.addEventListener('mousedown', function(e) {
+			    $DOM.toast.addEventListener('mousedown', function(e) {
 			    	e.preventDefault();
 			        drag.startMoving(this, that, settings, e);
 			    }, false);
 
-			    $toast.addEventListener('mouseup', function(e) {
+			    $DOM.toast.addEventListener('mouseup', function(e) {
 			    	e.preventDefault();
 			        drag.stopMoving(this, e);
 			    }, false);
 			}
 		}
-
 
 	};
 
